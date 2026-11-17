@@ -58,17 +58,54 @@ class EBook(Book):
     def get_info(self):
         return f"ელექტრონული, {self.file_format}"
 
+# BookManager - წიგნების სიის მართვა: დამატება, ნახვა, ძებნა, წაშლა
+class BookManager:
+    def __init__(self):
+        # __books - დამალული სია, გარედან მხოლოდ ამ კლასის მეთოდებით იცვლება
+        self.__books = []
 
-# ტესტი
-book1 = PrintedBook("ვეფხისტყაოსანი", "შოთა რუსთაველი", 1712, 320)
-book2 = EBook("დათა თუთაშხია", "ჭაბუა ამირეჯიბი", 1975, "PDF")
+    # add_book - ახალი წიგნის დამატება სიაში
+    def add_book(self, book):
+        self.__books.append(book)
 
-# ერთი და იგივე print, მაგრამ თითო წიგნი თავისებურად გამოიტანს თავის ინფოს
-books = [book1, book2]
-for book in books:
+    # get_all_books - სიის ასლს ვაბრუნებთ, რომ გარედან ორიგინალი ვერ შეცვალონ
+    def get_all_books(self):
+        return self.__books.copy()
+
+    # search_by_title - ძებნა სათაურის ნაწილით, დიდი/პატარა ასოების მიუხედავად
+    def search_by_title(self, title):
+        results = []
+        for book in self.__books:
+            if title.lower() in book.title.lower():
+                results.append(book)
+        return results
+
+    # delete_book - წაშლა ზუსტი სათაურით; აბრუნებს True თუ წაიშალა, False თუ ვერ მოიძებნა
+    def delete_book(self, title):
+        for book in self.__books:
+            if book.title.lower() == title.lower():
+                self.__books.remove(book)
+                return True
+        return False
+
+#ტესტი
+manager = BookManager()
+manager.add_book(PrintedBook("ვეფხისტყაოსანი", "შოთა რუსთაველი", 1712, 320))
+manager.add_book(EBook("დათა თუთაშხია", "ჭაბუა ამირეჯიბი", 1975, "PDF"))
+manager.add_book(PrintedBook("ჯაყოს ხიზნები", "მიხეილ ჯავახიშვილი", 1925, 250))
+
+print("--- ყველა წიგნი ---")
+for book in manager.get_all_books():
     print(book)
 
-try:
-    Book("რაღაც", "ავტორი", 2000)
-except TypeError as e:
-    print("შეცდომა:", e)
+print("--- ძებნა: 'დათა' ---")
+for book in manager.search_by_title("დათა"):
+    print(book)
+
+print("--- წაშლა ---")
+print(manager.delete_book("ჯაყოს ხიზნები"))
+print(manager.delete_book("არარსებული წიგნი"))
+
+print("--- ყველა წიგნი წაშლის შემდეგ ---")
+for book in manager.get_all_books():
+    print(book)

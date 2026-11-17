@@ -1,5 +1,6 @@
 # Book Manager - წიგნების მართვის კონსოლ აპლიკაცია
-
+import json
+import os
 from datetime import datetime
 from abc import ABC, abstractmethod
 
@@ -38,6 +39,13 @@ class Book(ABC):
     def get_info(self):
         pass
 
+    # to_dict - საერთო ველები ლექსიკონად (შვილობილი კლასები ამას თავის ველებს დაუმატებენ)
+    def to_dict(self):
+        return {
+            "title": self.title,
+            "author": self.author,
+            "year": self.year,
+        }
     # __str__ - როგორ გამოჩნდეს წიგნი print()-ის დროს
     def __str__(self):
         # self.get_info() - გაეშვება იმ კლასის ვერსია, რომლის ობიექტიცაა (პოლიმორფიზმი)
@@ -53,7 +61,18 @@ class PrintedBook(Book):
     # get_info - მშობლის აბსტრაქტული მეთოდის საკუთარი ვერსია (override)
     def get_info(self):
         return f"ნაბეჭდი, {self.pages} გვ."
+    # to_dict - მშობლის ლექსიკონს ვუმატებთ ტიპს და გვერდებს
+    def to_dict(self):
+        data = super().to_dict()
+        data["type"] = "printed"
+        data["pages"] = self.pages
+        return data
 
+    # from_dict - ლექსიკონიდან PrintedBook ობიექტის შექმნა
+    # @classmethod - ობიექტი ჯერ არ არსებობს, ამიტომ კლასზე იძახება, cls = PrintedBook
+    @classmethod
+    def from_dict(cls, data):
+        return cls(data["title"], data["author"], data["year"], data["pages"])
 
 # EBook - ელექტრონული წიგნი, გვერდების ნაცვლად აქვს ფაილის ფორმატი
 class EBook(Book):
@@ -64,15 +83,73 @@ class EBook(Book):
     def get_info(self):
         return f"ელექტრონული, {self.file_format}"
 
+    def to_dict(self):
+        data = super().to_dict()
+        data["type"] = "ebook"
+        data["file_format"] = self.file_format
+        return data
+
+    @classmethod
+    def from_dict(cls, data):
+        return cls(data["title"], data["author"], data["year"], data["file_format"])
+
+# book_from_dict - "type"-ის მიხედვით წყვეტს, რომელი კლასის ობიექტი შეიქმნას
+def book_from_dict(data):
+    if data["type"] == "printed":
+        return PrintedBook.from_dict(data)
+    if data["type"] == "ebook":
+        return EBook.from_dict(data)
+    raise ValueError(f"უცნობი ტიპი: {data['type']}")
+
+# BookStorage - მხოლოდ ფაილთან მუშაობა: წაკითხვა, ჩაწერა, წაშლა
+class BookStorage:
+    def __init__(self, file_path):
+        self.file_path = file_path
+
+    # load - ფაილიდან წიგნების სიის წაკითხვა
+    def load(self):
+        # os.path.exists - თუ ფაილი ჯერ არ არსებობს (პირველი გაშვება), ცარიელ სიას ვაბრუნებთ
+        if not os.path.exists(self.file_path):
+            return []
+        try:
+            with open(self.file_path, "r", encoding="utf-8") as file:
+                data = json.load(file)
+        # JSONDecodeError - ფაილი დაზიანებულია (არასწორი JSON), ცარიელი სიით ვიწყებთ
+        except json.JSONDecodeError:
+            return []
+
+        books = []
+        for item in data:
+            books.append(book_from_dict(item))
+        return books
+
+    # save - წიგნების სიის ჩაწერა ფაილში (თუ ფაილი არ არსებობს, "w" რეჟიმი თვითონ შექმნის)
+    def save(self, books):
+        data = []
+        for book in books:
+            data.append(book.to_dict())
+        with open(self.file_path, "w", encoding="utf-8") as file:
+            json.dump(data, file, ensure_ascii=False, indent=4)
+
+    # delete - ფაილის წაშლა; აბრუნებს True თუ წაიშალა, False თუ ფაილი არ არსებობდა
+    def delete(self):
+        if os.path.exists(self.file_path):
+            os.remove(self.file_path)
+            return True
+        return False
+
 # BookManager - წიგნების სიის მართვა: დამატება, ნახვა, ძებნა, წაშლა
 class BookManager:
-    def __init__(self):
-        # __books - დამალული სია, გარედან მხოლოდ ამ კლასის მეთოდებით იცვლება
-        self.__books = []
+    def __init__(self, storage):
+        # ახალი: storage - BookStorage ობიექტი, რომლითაც ფაილთან ვმუშაობთ
+        self.__storage = storage
+        # ახალი: სია ცარიელი აღარაა - გაშვებისას ფაილიდან იტვირთება
+        self.__books = storage.load()
 
-    # add_book - ახალი წიგნის დამატება სიაში
+    # add_book - ახალი წიგნის დამატება სიაში და ფაილის განახლება
     def add_book(self, book):
         self.__books.append(book)
+        self.__storage.save(self.__books)  # ახალი
 
     # get_all_books - სიის ასლს ვაბრუნებთ, რომ გარედან ორიგინალი ვერ შეცვალონ
     def get_all_books(self):
@@ -86,13 +163,19 @@ class BookManager:
                 results.append(book)
         return results
 
-    # delete_book - წაშლა ზუსტი სათაურით; აბრუნებს True თუ წაიშალა, False თუ ვერ მოიძებნა
+    # delete_book - წაშლა ზუსტი სათაურით და ფაილის განახლება
     def delete_book(self, title):
         for book in self.__books:
             if book.title.lower() == title.lower():
                 self.__books.remove(book)
+                self.__storage.save(self.__books)  # ახალი
                 return True
         return False
+
+    # ახალი: clear_all - ყველა წიგნის წაშლა სიიდან და თავად ფაილის წაშლა
+    def clear_all(self):
+        self.__books = []
+        return self.__storage.delete()
 
 # ===== შეყვანის ვალიდაცია =====
 
@@ -191,9 +274,22 @@ def delete_menu(manager):
     else:
         print("ასეთი წიგნი ვერ მოიძებნა")
 
+# მენიუს მე-5 პუნქტი - ყველა წიგნის და ფაილის წაშლა (დადასტურებით)
+def clear_all_menu(manager):
+    answer = input("ნამდვილად გინდა ყველა წიგნის წაშლა? (კი/არა): ").strip().lower()
+    if answer != "კი":
+        print("გაუქმდა")
+        return
+    if manager.clear_all():
+        print("ყველა წიგნი და ფაილი წაიშალა")
+    else:
+        print("ფაილი არ არსებობდა, სია გასუფთავდა")
+
 # ===== მთავარი მენიუ =====
 def main():
-    manager = BookManager()
+    # storage იქმნება პირველი და გადაეცემა manager-ს
+    storage = BookStorage("books.json")
+    manager = BookManager(storage)
 
     while True:
         print("\n===== წიგნების მენეჯერი =====")
@@ -201,6 +297,7 @@ def main():
         print("2. ყველა წიგნის ნახვა")
         print("3. ძებნა სათაურით")
         print("4. წიგნის წაშლა")
+        print("5. ყველა წიგნის წაშლა (ფაილის წაშლა)")
         print("0. გასვლა")
         choice = input("აირჩიე: ").strip()
 
@@ -212,8 +309,10 @@ def main():
             search_menu(manager)
         elif choice == "4":
             delete_menu(manager)
+        elif choice == "5":
+            clear_all_menu(manager)
         elif choice == "0":
-            print("ნახვამდის!")
+            print("თქვენ გახვედით მენიუდან!")
             break
         else:
             print("არასწორი არჩევანი, სცადე თავიდან")

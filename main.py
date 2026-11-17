@@ -16,16 +16,22 @@ class Book(ABC):
     def year(self):
         return self.__year
 
+    # @year.setter - ეშვება, როცა წელს მნიშვნელობას ვანიჭებთ: book.year = 1937
     @year.setter
     def year(self, value):
+        # შემოწმებას validate_year აკეთებს, არასწორ წელზე შეცდომას აგდებს
+        Book.validate_year(value)
+        self.__year = value
+
+    # @staticmethod - შემოწმებას ობიექტი არ სჭირდება, ამიტომ კლასზე იძახება: Book.validate_year(1990)
+    # ერთი წესი ორ ადგილას გამოიყენება: setter-ში და მენიუში
+    @staticmethod
+    def validate_year(value):
         current_year = datetime.now().year
-        # isinstance - ვამოწმებთ, არის თუ არა value მთელი რიცხვი
         if not isinstance(value, int):
             raise TypeError("წელი უნდა იყოს მთელი რიცხვი")
         if value < 1 or value > current_year:
             raise ValueError(f"წელი უნდა იყოს 1-დან {current_year}-მდე")
-        # მხოლოდ შემოწმების შემდეგ ვწერთ დამალულ ველში
-        self.__year = value
 
     # @abstractmethod - ყველა შვილობილმა კლასმა ეს მეთოდი თავისებურად უნდა დაწეროს
     @abstractmethod
@@ -88,24 +94,131 @@ class BookManager:
                 return True
         return False
 
-#ტესტი
-manager = BookManager()
-manager.add_book(PrintedBook("ვეფხისტყაოსანი", "შოთა რუსთაველი", 1712, 320))
-manager.add_book(EBook("დათა თუთაშხია", "ჭაბუა ამირეჯიბი", 1975, "PDF"))
-manager.add_book(PrintedBook("ჯაყოს ხიზნები", "მიხეილ ჯავახიშვილი", 1925, 250))
+# ===== შეყვანის ვალიდაცია =====
 
-print("--- ყველა წიგნი ---")
-for book in manager.get_all_books():
-    print(book)
+# input_text - ტექსტს ითხოვს მანამ, სანამ ცარიელი არ იქნება
+def input_text(prompt):
+    while True:
+        # strip - შლის ზედმეტ ჰარებს თავში და ბოლოში
+        text = input(prompt).strip()
+        if text:
+            return text
+        print("ველი ცარიელი არ შეიძლება იყოს")
 
-print("--- ძებნა: 'დათა' ---")
-for book in manager.search_by_title("დათა"):
-    print(book)
 
-print("--- წაშლა ---")
-print(manager.delete_book("ჯაყოს ხიზნები"))
-print(manager.delete_book("არარსებული წიგნი"))
+# input_positive_int - დადებით მთელ რიცხვს ითხოვს მანამ, სანამ სწორს არ შეიყვანენ
+def input_positive_int(prompt):
+    while True:
+        value = input(prompt).strip()
+        try:
+            number = int(value)
+        except ValueError:
+            print("შეიყვანე მთელი რიცხვი")
+            continue
+        if number > 0:
+            return number
+        print("რიცხვი 0-ზე მეტი უნდა იყოს")
 
-print("--- ყველა წიგნი წაშლის შემდეგ ---")
-for book in manager.get_all_books():
-    print(book)
+# input_year - წელს ითხოვს მანამ, სანამ Book.validate_year არ დაადასტურებს
+def input_year(prompt):
+    while True:
+        year = input_positive_int(prompt)
+        try:
+            Book.validate_year(year)
+            return year
+        except ValueError as e:
+            print(e)
+
+# ===== მენიუს ფუნქციები =====
+
+# მენიუს 1-ლი პუნქტი - ახალი წიგნის დამატება
+def add_book_menu(manager):
+    title = input_text("სათაური: ")
+    author = input_text("ავტორი: ")
+    year = input_year("გამოცემის წელი: ")
+
+    # ტიპს ვითხოვთ მანამ, სანამ 1-ს ან 2-ს არ აირჩევს
+    while True:
+        book_type = input("ტიპი (1 - ნაბეჭდი, 2 - ელექტრონული): ").strip()
+        if book_type in ("1", "2"):
+            break
+        print("აირჩიე 1 ან 2")
+
+    # try - წლის setter-მა შეიძლება ValueError ააგდოს (მაგ. 3000 წელი)
+    try:
+        if book_type == "1":
+            pages = input_positive_int("გვერდების რაოდენობა: ")
+            book = PrintedBook(title, author, year, pages)
+        else:
+            file_format = input_text("ფაილის ფორმატი (მაგ. PDF, EPUB): ").upper()
+            book = EBook(title, author, year, file_format)
+    except ValueError as e:
+        print(f"შეცდომა: {e}")
+        return
+
+    manager.add_book(book)
+    print("წიგნი დაემატა")
+
+
+# მენიუს მე-2 პუნქტი - ყველა წიგნის ჩვენება
+def show_books_menu(manager):
+    books = manager.get_all_books()
+    if not books:
+        print("სია ცარიელია")
+        return
+    # enumerate - თითო წიგნს ნომერს აძლევს, start=1 - დათვლა 1-დან იწყება
+    for number, book in enumerate(books, start=1):
+        print(f"{number}. {book}")
+
+
+# მენიუს მე-3 პუნქტი - ძებნა სათაურით
+def search_menu(manager):
+    title = input_text("საძიებო სათაური: ")
+    results = manager.search_by_title(title)
+    if not results:
+        print("ვერაფერი მოიძებნა")
+        return
+    for book in results:
+        print(book)
+
+
+# მენიუს მე-4 პუნქტი - წიგნის წაშლა
+def delete_menu(manager):
+    title = input_text("წასაშლელი წიგნის ზუსტი სათაური: ")
+    # delete_book აბრუნებს True/False - ამის მიხედვით ვწერთ შეტყობინებას
+    if manager.delete_book(title):
+        print("წიგნი წაიშალა")
+    else:
+        print("ასეთი წიგნი ვერ მოიძებნა")
+
+# ===== მთავარი მენიუ =====
+def main():
+    manager = BookManager()
+
+    while True:
+        print("\n===== წიგნების მენეჯერი =====")
+        print("1. წიგნის დამატება")
+        print("2. ყველა წიგნის ნახვა")
+        print("3. ძებნა სათაურით")
+        print("4. წიგნის წაშლა")
+        print("0. გასვლა")
+        choice = input("აირჩიე: ").strip()
+
+        if choice == "1":
+            add_book_menu(manager)
+        elif choice == "2":
+            show_books_menu(manager)
+        elif choice == "3":
+            search_menu(manager)
+        elif choice == "4":
+            delete_menu(manager)
+        elif choice == "0":
+            print("ნახვამდის!")
+            break
+        else:
+            print("არასწორი არჩევანი, სცადე თავიდან")
+
+
+# პროგრამა მხოლოდ მაშინ ეშვება, როცა ეს ფაილი პირდაპირ გავუშვით (python main.py)
+if __name__ == "__main__":
+    main()
